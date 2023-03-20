@@ -89,11 +89,7 @@ func With(ctx context.Context, options ...Option) (context.Context, error) {
 // From will return the console from the provided context or the default console.  The first time From or With is
 // called, the default console is initialized from os.Stdout, os.Stderr, and os.Environ.
 func From(ctx context.Context) Interface {
-	cfg, ok := ctx.Value(ctxConsole{}).(*config)
-	if ok {
-		return cfg
-	}
-	return cfg
+	return from(ctx)
 }
 
 // from returns either the console from the provided context or the default console.

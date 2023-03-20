@@ -194,15 +194,14 @@ func (errs Errors) Error() string {
 }
 
 func runTask(ctx context.Context, task Task) (e Error) {
-	var err error
 	if debug {
 		e.Task = taskName(task)
 	} else {
 		defer func() {
 			switch r := recover().(type) {
 			case nil:
-				if err != nil {
-					e = Error{taskName(task), err}
+				if e.Err != nil {
+					e = Error{taskName(task), e.Err}
 				}
 			case error:
 				e = Error{taskName(task), r}
@@ -211,11 +210,11 @@ func runTask(ctx context.Context, task Task) (e Error) {
 			}
 		}()
 	}
-	err = task.RunTask(ctx)
+	e.Err = task.RunTask(ctx)
 	return
 }
 
-var debug = true
+var debug = false
 
 // An Error is an error that knows which task it came from.
 type Error struct {

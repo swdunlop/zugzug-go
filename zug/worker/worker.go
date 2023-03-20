@@ -79,12 +79,12 @@ func (w *worker) run(ctx context.Context, id uint, fn func(context.Context) erro
 	pc := reflect.ValueOf(fn).Pointer()
 	rid := resultID{id, pc}
 	w.control.Lock()
-	defer w.control.Unlock()
 	state, ok := w.state[rid]
 	if !ok {
 		state = &result{}
 		w.state[rid] = state
 	}
+	w.control.Unlock()
 	state.once.Do(func() { state.err = fn(ctx) })
 	return state.err
 }
