@@ -13,11 +13,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/swdunlop/zugzug-go/zug"
+	"github.com/swdunlop/zugzug-go/zug/console"
 )
 
 // Main will assemble a configuration of tasks that can be performed with the provided options, and then run them based
@@ -43,10 +43,11 @@ func runMain(options ...Option) error {
 // New will assemble a configuration of tasks that can be run based on context.
 func New(options ...Option) (Interface, error) {
 	cfg := &config{
-		tasks: make(map[string]any),
-		usage: make(map[string]string),
+		tasks:   make(map[string]any),
+		parsers: make(map[string]Parser),
+		usage:   make(map[string]string),
 	}
-	cfg.addTask(`help`, zug.Alias(`help`, zug.New(cfg.showUsage)))
+	cfg.addTask(`help`, zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg)
 	for _, option := range options {
 		option.apply(cfg)
 		if cfg.err != nil {
@@ -59,9 +60,10 @@ func New(options ...Option) (Interface, error) {
 // Tasks specify a set of tasks that can be run by a Zugzug configuration and can be provided as an option to New and
 // Main.
 type Tasks []struct {
-	Name string                      // if empty, the name of the function will be used
-	Fn   func(context.Context) error // the task function
-	Use  string                      // if non-empty, explains what the task does
+	Name  string                      // if empty, the name of the function will be used
+	Fn    func(context.Context) error // the task function
+	Use   string                      // if non-empty, explains what the task does
+	Parse Parser                      // if non-nil this will be used to parse additional arguments and flags
 }
 
 func (seq Tasks) apply(cfg *config) {
@@ -78,66 +80,171 @@ func (seq Tasks) apply(cfg *config) {
 		if name == `` {
 			panic(fmt.Errorf(`all zugzug tasks must have a name`))
 		}
-		cfg.addTask(name, task)
+		cfg.addTask(name, task, it.Parse)
 		if it.Use != `` {
 			cfg.addUsage(name, it.Use)
 		}
 	}
 }
 
-type config struct {
-	tasks map[string]any
-	usage map[string]string
-	err   error
+type Parser interface {
+	// Parse will parse arguments for flags or return nil, nil if help is requested.
+	Parse(ctx context.Context, name string, arguments []string) (context.Context, error)
+
+	// Usage will provide information about how the parser uses arguments.
+	Usage(name string) string
 }
+
+type config struct {
+	tasks   map[string]any
+	parsers map[string]Parser
+	err     error
+	topics  []string
+	usage   map[string]string
+}
+
+func (cfg *config) Parse(ctx context.Context, _ string, args []string) (context.Context, error) {
+	if len(args) == 0 {
+		return ctx, nil
+	}
+	if len(args) > 1 {
+		return nil, fmt.Errorf(`cannot provide help for more than one argument`)
+	}
+	return context.WithValue(ctx, ctxHelpTopic{}, args[0]), nil
+}
+
+func (cfg *config) Usage(name string) string { return name + ` help [topic]` }
+
+type ctxHelpTopic struct{}
 
 func (cfg *config) Run(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
 		args = []string{`help`}
-	}
-	tasks := make([]any, 0, len(args))
-	for _, arg := range args {
-		task, ok := cfg.tasks[strings.ToLower(arg)]
-		if !ok {
-			return fmt.Errorf(`unknown task %q`, arg)
+	} else {
+		switch args[0] {
+		case `--help`, `-h`:
+			args[0] = `help`
+		default:
+			if len(args) > 1 {
+				switch args[1] {
+				case `--help`, `-h`:
+					args = []string{`help`, args[0]}
+				}
+			}
 		}
-		tasks = append(tasks, task)
 	}
-	return zug.Run(ctx, tasks...)
+
+	var runs []runConfig
+	for len(args) > 0 {
+		var run runConfig
+		var err error
+		run, args, err = cfg.run(ctx, args...)
+		if err != nil {
+			return err
+		}
+		runs = append(runs, run)
+	}
+
+	for _, run := range runs {
+		err := zug.Run(run.ctx, run.task)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (cfg *config) addTask(name string, task zug.Task) {
+func (cfg *config) run(ctx context.Context, args ...string) (runConfig, []string, error) {
+	arg0, args := args[0], args[1:]
+	taskName := strings.ToLower(arg0)
+	task, ok := cfg.tasks[taskName]
+	if !ok {
+		return runConfig{}, nil, fmt.Errorf(`unknown task %q`, arg0)
+	}
+
+	fs := cfg.parsers[taskName]
+	if fs == nil {
+		return runConfig{ctx, task}, args, nil
+	}
+	ctx, err := fs.Parse(ctx, arg0, args)
+	if err != nil {
+		return runConfig{}, args, err
+	}
+	if ctx != nil {
+		return runConfig{ctx, task}, nil, nil
+	}
+	return runConfig{}, []string{`help`, taskName}, nil
+}
+
+type runConfig struct {
+	ctx  context.Context
+	task any
+}
+
+func (cfg *config) addTask(name string, task zug.Task, parser Parser) {
+	cfg.topics = append(cfg.topics, name)
 	cfg.tasks[name] = task
+	cfg.parsers[name] = parser
 }
 
 func (cfg *config) addUsage(name, use string) {
 	cfg.usage[name] = use
 }
 
-func (cfg *config) showUsage(ctx context.Context) error {
-	argv0 := os.Args[0] // TODO: let the user override this
-	argv0 = strings.TrimSuffix(argv0, `.exe`)
-	if ix := strings.LastIndexByte(argv0, filepath.Separator); ix >= 0 {
-		argv0 = argv0[ix+1:]
+func (cfg *config) provideHelp(ctx context.Context) error {
+	if topic, ok := ctx.Value(ctxHelpTopic{}).(string); ok {
+		return cfg.explainTopic(ctx, topic)
 	}
 
-	topics := make([]string, 0, len(cfg.usage))
-	for topic := range cfg.usage {
-		topics = append(topics, topic)
-	}
-	sort.Strings(topics)
-
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	argv0 := cfg.baseCommandName()
+	tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
 	defer tw.Flush()
 	fmt.Fprintln(tw, `USAGE:`)
-	for _, topic := range topics {
+	for _, topic := range cfg.topics {
+		if topic == `help` {
+			continue
+		}
 		usage := cfg.usage[topic]
+		if ix := strings.IndexByte(usage, '\n'); ix > 0 {
+			usage = usage[:ix]
+		}
+		usage = strings.TrimSuffix(usage, "\r")
 		fmt.Fprintf(tw, "  %s %s \t%s\n", argv0, topic, usage)
 	}
 	return nil
 }
 
+func (cfg *config) explainTopic(ctx context.Context, topic string) error {
+	usage := cfg.usage[topic]
+	if usage == `` {
+		return fmt.Errorf(`no help available for "%q"`, topic)
+	}
+	argv0 := cfg.baseCommandName()
+	err := console.PrintError(ctx, argv0, topic)
+	if err != nil {
+		return err
+	}
+	console.PrintError(ctx, usage)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cfg *config) baseCommandName() string {
+	argv0 := os.Args[0] // TODO: let the user override this
+	argv0 = strings.TrimSuffix(argv0, `.exe`)
+	if ix := strings.LastIndexByte(argv0, filepath.Separator); ix >= 0 {
+		argv0 = argv0[ix+1:]
+	}
+	return argv0
+}
+
+// Interface describes the interface produced by New for running a task using a list of arguments.
 type Interface interface {
+	// Run will select a task based on the provided arguments.  If that task specifies a parser, its parser will be
+	// provided with any remaining arguments.  Otherwise, Run will use the next argument to select another task, and
+	// so on.
 	Run(ctx context.Context, args ...string) error
 }
 
