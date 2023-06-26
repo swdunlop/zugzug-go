@@ -23,7 +23,7 @@ influences by [Mage](https://magefile.org/), but foregoes code generation in fav
 
 ## Getting Started
 
-Zug Zug is a Go module, so you can just import it into your project and start using its packages.  See [./examples](./examples) for some simple examples of how to use Zug Zug.
+Zug Zug is a Go module, so you can just import it into your project and start using its packages.  See [./example](./example) for some a simple example of how to use Zug Zug.
 
 ## License
 
