@@ -4,5 +4,5 @@ Parsing
 [x] Implement `parser.Custom` to let tasks handle their own parsing.
 [x] Implement `parser.New` using pflag.
 [x] Add time.Time and time.Duration flag support.
-[ ] Ensure the name provided to parse includes the full command, not just the subcommand.  
-[ ] Provide support for a "Default" zugzug task, defaulting to "help" if not provided.
+[x] Ensure the name provided to parse includes the full command, not just the subcommand.  
+[x] Provide support for a "Default" zugzug task, defaulting to "help" if not provided.
