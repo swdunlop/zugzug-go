@@ -1,0 +1,4 @@
+Parsing
+[x] Do not assume `--help` after args[0] should be rewritten as `help`, let parsers handle help.
+[ ] Ensure the name provided includes the full command, not just the subcommand.  
+[ ] Provide support for a "Default" zugzug task, defaulting to "help" if not provided.

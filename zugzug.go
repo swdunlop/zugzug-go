@@ -90,9 +90,6 @@ func (seq Tasks) apply(cfg *config) {
 type Parser interface {
 	// Parse will parse arguments for flags or return nil, nil if help is requested.
 	Parse(ctx context.Context, name string, arguments []string) (context.Context, error)
-
-	// Usage will provide information about how the parser uses arguments.
-	Usage(name string) string
 }
 
 type config struct {
@@ -124,13 +121,6 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 		switch args[0] {
 		case `--help`, `-h`:
 			args[0] = `help`
-		default:
-			if len(args) > 1 {
-				switch args[1] {
-				case `--help`, `-h`:
-					args = []string{`help`, args[0]}
-				}
-			}
 		}
 	}
 
