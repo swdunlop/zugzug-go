@@ -8,6 +8,7 @@ package zugzug
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -24,6 +25,14 @@ import (
 // on the command line arguments.
 func Main(options ...Option) {
 	err := runMain(options...)
+	if err == nil {
+		return
+	}
+
+	var exit Exit
+	if errors.As(err, &exit) {
+		os.Exit(int(exit))
+	}
 	if err != nil {
 		println(`!!`, err.Error())
 		os.Exit(1)
@@ -43,9 +52,10 @@ func runMain(options ...Option) error {
 // New will assemble a configuration of tasks that can be run based on context.
 func New(options ...Option) (Interface, error) {
 	cfg := &config{
-		tasks:   make(map[string]any),
-		parsers: make(map[string]Parser),
-		usage:   make(map[string]string),
+		tasks:       make(map[string]any),
+		parsers:     make(map[string]Parser),
+		usage:       make(map[string]string),
+		defaultTask: `help`,
 	}
 	cfg.addTask(`help`, zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg)
 	for _, option := range options {
@@ -55,6 +65,11 @@ func New(options ...Option) (Interface, error) {
 		}
 	}
 	return cfg, nil
+}
+
+// Default specifies the default task if no arguments are provided.
+func Default(taskName string) Option {
+	return fnOption(func(cfg *config) { cfg.defaultTask = taskName })
 }
 
 // Tasks specify a set of tasks that can be run by a Zugzug configuration and can be provided as an option to New and
@@ -93,11 +108,12 @@ type Parser interface {
 }
 
 type config struct {
-	tasks   map[string]any
-	parsers map[string]Parser
-	err     error
-	topics  []string
-	usage   map[string]string
+	tasks       map[string]any
+	parsers     map[string]Parser
+	err         error
+	topics      []string
+	usage       map[string]string
+	defaultTask string
 }
 
 func (cfg *config) Parse(ctx context.Context, _ string, args []string) (context.Context, error) {
@@ -116,7 +132,7 @@ type ctxHelpTopic struct{}
 
 func (cfg *config) Run(ctx context.Context, args ...string) error {
 	if len(args) == 0 {
-		args = []string{`help`}
+		args = []string{cfg.defaultTask}
 	} else {
 		switch args[0] {
 		case `--help`, `-h`:
@@ -156,7 +172,7 @@ func (cfg *config) run(ctx context.Context, args ...string) (runConfig, []string
 	if fs == nil {
 		return runConfig{ctx, task}, args, nil
 	}
-	ctx, err := fs.Parse(ctx, arg0, args)
+	ctx, err := fs.Parse(ctx, cfg.baseCommandName()+` `+arg0, args)
 	if err != nil {
 		return runConfig{}, args, err
 	}
@@ -263,3 +279,9 @@ var (
 	rxAllCap   = regexp.MustCompile(`([\p{Ll}0-9])([\p{Lu}])`)
 	rxWord     = regexp.MustCompile(`[\pL0-9]+`)
 )
+
+// Exit, when returns as an error by a task to Main, causes it to exit with a specific error code but not print
+// any error.
+type Exit int
+
+func (ex Exit) Error() string { return fmt.Sprint(`exit code `, int(ex)) }
