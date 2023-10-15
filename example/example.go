@@ -25,10 +25,10 @@ func main() {
 		{Fn: CheckLinks, Use: `checks links`},
 		{Fn: GenerateHTML, Use: `generates HTML`},
 		{Fn: ListGoSources, Use: `finds Go source files`},
-		{Fn: Sleep, Use: `sleeps for a certain amount of time`, Parse: parser.New(
+		{Fn: Sleep, Use: `sleeps for a certain amount of time`, Parser: parser.New(
 			parser.Duration(&sleepTime, `duration`, `t`, `how long to sleep`),
 		)},
-		{Name: `ql`, Fn: RunQL, Use: `runs the QL command line utility`, Parse: parser.Custom()},
+		{Name: `ql`, Fn: RunQL, Use: `runs the QL command line utility`, Parser: parser.Custom()},
 	})
 }
 

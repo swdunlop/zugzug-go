@@ -55,13 +55,13 @@ func Int(p *int, name, shorthand string, usage string) Option {
 }
 
 // Bool applies FlagSet.BoolVarP as an Option to add a bool flag with shorthand.
-func Bool(p *bool, name, shorthand string, value bool, usage string) Option {
-	return func(fs *FlagSet) { fs.BoolVarP(p, name, shorthand, value, usage) }
+func Bool(p *bool, name, shorthand string, usage string) Option {
+	return func(fs *FlagSet) { fs.BoolVarP(p, name, shorthand, *p, usage) }
 }
 
 // Uint applies FlagSet.UintVarP as an Option to add a uint flag with shorthand.
-func Uint(p *uint, name, shorthand string, value uint, usage string) Option {
-	return func(fs *FlagSet) { fs.UintVarP(p, name, shorthand, value, usage) }
+func Uint(p *uint, name, shorthand string, usage string) Option {
+	return func(fs *FlagSet) { fs.UintVarP(p, name, shorthand, *p, usage) }
 }
 
 // Time uses Var to add a time flag expecting the provided format.  The format is the same as that used in
@@ -82,8 +82,8 @@ func Duration(p *time.Duration, name, shorthand string, usage string) Option {
 }
 
 // StringSlice applies FlagSet.StringSliceVarP as an Option to add a slice of strings flag with shorthand.
-func StringSlice(p *[]string, name, shorthand string, value []string, usage string) Option {
-	return func(fs *FlagSet) { fs.StringSliceVarP(p, name, shorthand, value, usage) }
+func StringSlice(p *[]string, name, shorthand string, usage string) Option {
+	return func(fs *FlagSet) { fs.StringSliceVarP(p, name, shorthand, *p, usage) }
 }
 
 // Var applies FlagSet.VarP as an Option to add a variable flag with shorthand.

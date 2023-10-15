@@ -75,10 +75,10 @@ func Default(taskName string) Option {
 // Tasks specify a set of tasks that can be run by a Zugzug configuration and can be provided as an option to New and
 // Main.
 type Tasks []struct {
-	Name  string                      // if empty, the name of the function will be used
-	Fn    func(context.Context) error // the task function
-	Use   string                      // if non-empty, explains what the task does
-	Parse Parser                      // if non-nil this will be used to parse additional arguments and flags
+	Name   string                      // if empty, the name of the function will be used
+	Fn     func(context.Context) error // the task function
+	Use    string                      // if non-empty, explains what the task does
+	Parser Parser                      // if non-nil this will be used to parse additional arguments and flags
 }
 
 func (seq Tasks) apply(cfg *config) {
@@ -95,7 +95,7 @@ func (seq Tasks) apply(cfg *config) {
 		if name == `` {
 			panic(fmt.Errorf(`all zugzug tasks must have a name`))
 		}
-		cfg.addTask(name, task, it.Parse)
+		cfg.addTask(name, task, it.Parser)
 		if it.Use != `` {
 			cfg.addUsage(name, it.Use)
 		}
