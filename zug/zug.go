@@ -17,6 +17,10 @@ import (
 	"github.com/swdunlop/zugzug-go/zug/worker"
 )
 
+// Debug, once called, will disable recovery from panics and will instead allow them to propagate.  This is not ideal
+// if you are running tasks in parallel, but it is useful for debugging.
+func Debug() { debug = true }
+
 // WithLocalState will provide a new context with local state table for tracking whether a task has been run.  This
 // is useful for enabling running tasks multiple times.
 func WithLocalState(ctx context.Context) context.Context {
@@ -194,22 +198,24 @@ func (errs Errors) Error() string {
 }
 
 func runTask(ctx context.Context, task Task) (e Error) {
-	if debug {
-		e.Task = taskName(task)
-	} else {
-		defer func() {
-			switch r := recover().(type) {
-			case nil:
-				if e.Err != nil {
-					e = Error{taskName(task), e.Err}
-				}
-			case error:
-				e = Error{taskName(task), r}
-			default:
-				e = Error{taskName(task), fmt.Errorf(`%v`, r)}
-			}
-		}()
-	}
+	e.Task = taskName(task)
+	defer func() {
+		r := recover()
+		switch r := r.(type) {
+		case nil:
+			return
+		case error:
+			e.Err = r
+		default:
+			e.Err = fmt.Errorf(`%v`, r)
+		}
+		e.Stack = make([]uintptr, 64)
+		n := runtime.Callers(2, e.Stack)
+		e.Stack = e.Stack[:n]
+		if debug {
+			panic(r)
+		}
+	}()
 	e.Err = task.RunTask(ctx)
 	return
 }
@@ -218,8 +224,9 @@ var debug = false
 
 // An Error is an error that knows which task it came from.
 type Error struct {
-	Task string
-	Err  error
+	Task  string
+	Err   error
+	Stack []uintptr // Only set if a panic occurred during the task.
 }
 
 // Error implements the error interface by returning a string indicating the "task: error".
