@@ -64,6 +64,11 @@ func Uint(p *uint, name, shorthand string, usage string) Option {
 	return func(fs *FlagSet) { fs.UintVarP(p, name, shorthand, *p, usage) }
 }
 
+// Float applies FlagSet.FloatVarP as an Option to add a float flag with shorthand.
+func Float(p *float64, name, shorthand string, usage string) Option {
+	return func(fs *FlagSet) { fs.Float64VarP(p, name, shorthand, *p, usage) }
+}
+
 // Time uses Var to add a time flag expecting the provided format.  The format is the same as that used in
 // time.ParseInLocation with location set to time.Local.
 func Time(p *time.Time, name, shorthand string, format string, usage string) Option {
