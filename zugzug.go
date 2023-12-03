@@ -55,7 +55,7 @@ func New(options ...Option) (Interface, error) {
 		tasks:       make([]boundTask, 0, 32),
 		defaultTask: `help`,
 	}
-	cfg.bindTask(zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg, ``)
+	cfg.bindTask(zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg, nil, ``)
 	for _, option := range options {
 		option.apply(cfg)
 		if cfg.err != nil {
@@ -73,10 +73,11 @@ func Default(taskName string) Option {
 // Tasks specify a set of tasks that can be run by a Zugzug configuration and can be provided as an option to New and
 // Main.
 type Tasks []struct {
-	Name   string                      // if empty, the name of the function will be used
-	Fn     func(context.Context) error // the task function
-	Use    string                      // if non-empty, explains what the task does
-	Parser Parser                      // if non-nil this will be used to parse additional arguments and flags
+	Name     string                      // if empty, the name of the function will be used
+	Fn       func(context.Context) error // the task function
+	Use      string                      // if non-empty, explains what the task does
+	Parser   Parser                      // if non-nil this will be used to parse additional arguments and flags
+	Settings Settings                    // will be configured using the console environment
 }
 
 func (seq Tasks) apply(cfg *config) {
@@ -95,10 +96,23 @@ func (seq Tasks) apply(cfg *config) {
 		if name == `` {
 			panic(fmt.Errorf(`all zugzug tasks must have a name`))
 		}
-		cfg.bindTask(task, it.Parser, it.Use)
+		cfg.bindTask(task, it.Parser, it.Settings, it.Use)
 	}
 }
 
+// Helper describes an interface that may be implemented by a parser or task to explain its arguments and flags.  This
+// is implemented by zug/parser.  This should return text like "foo bar [-f foo] file1 fileN...\nFLAGS:\n  -f
+// .."
+//
+// Zugzug will prefer the parser's help to the task.
+type Helper interface {
+	// Help will return a string explaining the arguments and flags for the named command.
+	Help(name string) string
+}
+
+// Parser describes an interface that parses the remaining arguments for a task.  This prevents the default behavior of
+// interpreting the remaining arguments for additional tasks.  See zug/parser for a robust implementation of this
+// interface.
 type Parser interface {
 	// Parse will parse arguments for flags or return nil, nil if help is requested.
 	Parse(ctx context.Context, name string, arguments []string) (context.Context, error)
@@ -141,11 +155,19 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 	}
 	var jobs []job
 
+	lookupEnv := envLookup(ctx)
+
 	for len(args) > 0 {
 		// TODO: support for using "--" to separate arguments from the command and its flags.
 		task := cfg.match(args...)
 		if task == nil {
 			return fmt.Errorf(`unknown command %q; try "help" for a list of commands`, strings.Join(args, ` `))
+		}
+		if task.settings != nil {
+			err := task.settings.Apply(lookupEnv)
+			if err != nil {
+				return fmt.Errorf(`%w in %q`, err, strings.Join(task.name, ` `))
+			}
 		}
 		args = args[len(task.name):]
 		taskCtx := ctx
@@ -155,7 +177,17 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 			if err != nil {
 				return err
 			}
+			if taskCtx == nil {
+				return cfg.explainTopic(ctx, strings.Join(task.name, ` `))
+			}
 			args = nil // we assume the parser has consumed all arguments
+		}
+		if len(args) > 0 {
+			switch args[0] {
+			case `--help`, `-h`:
+				// stop planning work, give the user help.
+				return cfg.explainTopic(ctx, strings.Join(task.name, ` `))
+			}
 		}
 		jobs = append(jobs, job{ctx: taskCtx, task: task.task})
 	}
@@ -183,7 +215,7 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 	argv0 := cfg.baseCommandName()
 	tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
 	defer tw.Flush()
-	fmt.Fprintln(tw, `USAGE:`)
+	fmt.Fprintln(tw, `COMMANDS:`)
 	for _, topic := range cfg.topics {
 		if topic == `help` {
 			continue
@@ -208,14 +240,28 @@ func (cfg *config) explainTopic(ctx context.Context, topic string) error {
 		return fmt.Errorf(`no help available for "%q"`, topic)
 	}
 	argv0 := cfg.baseCommandName()
-	err := console.PrintError(ctx, argv0, topic)
-	if err != nil {
-		return err
+	if helper, ok := task.parser.(Helper); ok {
+		_ = console.PrintError(ctx, helper.Help(argv0+` `+topic))
+	} else if helper, ok := task.task.(Helper); ok {
+		_ = console.PrintError(ctx, helper.Help(argv0+` `+topic))
+	} else {
+		_ = console.PrintError(ctx, `COMMAND:`, argv0, topic)
 	}
-	console.PrintError(ctx, task.use)
-	if err != nil {
-		return err
+
+	if len(task.settings) > 0 {
+		tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, `SETTINGS:`)
+		for _, it := range task.settings {
+			value := get(it.Var)
+			if value == `` {
+				fmt.Fprintf(tw, "  %s \t%s\n", it.Name, it.Use)
+			} else {
+				fmt.Fprintf(tw, "  %s \t%s (default: %q)\n", it.Name, it.Use, value)
+			}
+		}
+		_ = tw.Flush()
 	}
+
 	return nil
 }
 
@@ -228,7 +274,7 @@ func (cfg *config) baseCommandName() string {
 	return argv0
 }
 
-func (cfg *config) bindTask(task zug.NamedTask, parser Parser, use string) {
+func (cfg *config) bindTask(task zug.NamedTask, parser Parser, settings Settings, use string) {
 	nameStr := strings.TrimSpace(task.TaskName())
 	var nameSeq []string
 	if nameStr != `` {
@@ -238,10 +284,11 @@ func (cfg *config) bindTask(task zug.NamedTask, parser Parser, use string) {
 	}
 
 	cfg.tasks = append(cfg.tasks, boundTask{
-		name:   nameSeq,
-		task:   task,
-		parser: parser,
-		use:    use,
+		name:     nameSeq,
+		task:     task,
+		parser:   parser,
+		settings: settings,
+		use:      use,
 	})
 }
 
@@ -264,10 +311,11 @@ func (cfg *config) match(args ...string) *boundTask {
 }
 
 type boundTask struct {
-	name   []string
-	task   zug.NamedTask
-	use    string
-	parser Parser
+	name     []string
+	task     zug.NamedTask
+	use      string
+	parser   Parser
+	settings Settings
 }
 
 // matches returns true if the args[:len(task.name)] matches task.name.

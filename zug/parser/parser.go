@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -111,10 +112,26 @@ func (cfg *config) Parse(ctx context.Context, name string, arguments []string) (
 	case nil:
 		return context.WithValue(ctx, ctxArgs{}, fs.Args()), nil
 	case pflag.ErrHelp:
-		return nil, zugzug.Exit(1)
+		return nil, nil
 	default:
 		return nil, err
 	}
+}
+
+// Help implements zugzug.Helper by explaining the flags configured by the parser.
+func (cfg *config) Help(name string) string {
+	fs := cfg.flagset(name)
+	var buf strings.Builder
+	buf.WriteString(`COMMAND: `)
+	buf.WriteString(name)
+	buf.WriteString(` [flag...]`)
+	buf.WriteString(` [argument...]`)
+	buf.WriteString("\n")
+	if fs.HasFlags() {
+		buf.WriteString("FLAGS:\n")
+		buf.WriteString(fs.FlagUsagesWrapped(118))
+	}
+	return buf.String()
 }
 
 type ctxArgs struct{}
@@ -122,6 +139,7 @@ type ctxArgs struct{}
 // flagset composes a new flagset with the provided name and applies options.
 func (cfg *config) flagset(name string) *FlagSet {
 	fs := pflag.NewFlagSet(name, pflag.ContinueOnError)
+	fs.Usage = func() {} // do nothing, we will return nil, nil instead.
 	for _, opt := range cfg.options {
 		opt(fs)
 	}

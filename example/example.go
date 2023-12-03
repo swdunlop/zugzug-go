@@ -17,6 +17,9 @@ import (
 	"github.com/swdunlop/zugzug-go/zug/parser"
 )
 
+var port = `8080`
+var requestTimeLimit = time.Second
+
 func main() {
 	// Main will take over the program, running tasks based on the command line arguments.
 	zugzug.Main(zugzug.Tasks{
@@ -31,8 +34,16 @@ func main() {
 		{Fn: Sleep, Use: `sleeps for a certain amount of time`, Parser: parser.New(
 			parser.Duration(&sleepTime, `duration`, `t`, `how long to sleep`),
 		)},
+		{Name: `serve`, Fn: ServeSite, Use: `serves the site`, Settings: zugzug.Settings{
+			{Var: &port, Name: `PORT`, Use: `the port to serve on`},
+			{Var: &requestTimeLimit, Name: `REQUEST_TIME_LIMIT`, Use: `the time limit for requests`},
+		}},
 		{Name: `ql`, Fn: RunQL, Use: `runs the QL command line utility`, Parser: parser.Custom()},
 	})
+}
+
+func ServeSite(ctx context.Context) error {
+	return console.Print(ctx, `serving on port`, port)
 }
 
 // task groups all of the methods we want to expose as Zug tasks.

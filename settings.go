@@ -1,6 +1,13 @@
 package zugzug
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/swdunlop/zugzug-go/zug/console"
+)
 
 // Settings provide a way to configure data from an environment.
 type Settings []struct {
@@ -24,6 +31,20 @@ func (seq Settings) Apply(lookup func(string) (string, bool)) error {
 	return nil
 }
 
+// get will get the value of a variable as a string.
+func get(target any) string {
+	// target is likely a pointer to a value, so we need to dereference it
+	targetValue := reflect.ValueOf(target)
+	switch targetValue.Kind() {
+	case reflect.Ptr, reflect.Interface:
+		if targetValue.IsNil() {
+			return ``
+		}
+		target = targetValue.Elem().Interface()
+	}
+	return fmt.Sprint(target)
+}
+
 // set will set the value of a variable.
 func set(target any, value string) error {
 	switch target := target.(type) {
@@ -36,4 +57,20 @@ func set(target any, value string) error {
 		}
 	}
 	return nil
+}
+
+// envLookup will compose a lookup function from the provided context.
+func envLookup(ctx context.Context) func(string) (string, bool) {
+	env := console.From(ctx).Env()
+	table := make(map[string]string, len(env))
+	for _, it := range env {
+		if i := strings.IndexByte(it, '='); i > 0 {
+			table[it[:i]] = it[i+1:]
+		}
+	}
+
+	return func(name string) (string, bool) {
+		str, ok := table[name]
+		return str, ok
+	}
 }
