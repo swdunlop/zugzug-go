@@ -4,6 +4,7 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
+// Package zugzug makes it easy to bind a set of Zug tasks as subcommands of a command line program.
 package zugzug
 
 import (
@@ -365,7 +366,7 @@ var (
 	rxWord     = regexp.MustCompile(`[\pL0-9]+`)
 )
 
-// Exit, when returns as an error by a task to Main, causes it to exit with a specific error code but not print
+// Exit, when returned as an error by a task to Main, causes it to exit with a specific error code but not print
 // any error.
 type Exit int
 

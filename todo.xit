@@ -6,3 +6,6 @@ Parsing
 [x] Add time.Time and time.Duration flag support.
 [x] Ensure the name provided to parse includes the full command, not just the subcommand.  
 [x] Provide support for a "Default" zugzug task, defaulting to "help" if not provided.
+[x] Improve documentation for cases where there is a parser.
+[x] Add support for settings in zugzug tasks.
+[x] Improve documentation for cases where there are settings.

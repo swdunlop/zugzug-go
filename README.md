@@ -1,7 +1,7 @@
 # Zug Zug Go!
 
 Zug Zug is a package that organizes tasks written in Go so they can be run serially or in parallel.  It is heavily
-influences by [Mage](https://magefile.org/), but foregoes code generation in favor of being easier to embed and extend.
+influenced by [Mage](https://magefile.org/), but foregoes code generation in favor of being easier to embed and extend.
 (There would be no Zug without the lessons learned from using Mage over the years!)
 
 ## Differences from Mage
@@ -31,5 +31,5 @@ Zug Zug is licensed under the BSD 3-Clause License.  See [LICENSE](./LICENSE) fo
 
 ## Contributing
 
-Zug Zug is very much in early development, the pieces work, but there is more to add in terms of options, especially in
-the "zugzug" and "console" packages.  If you have ideas or want to contribute, please open an issue or pull request.
+Zug Zug is still in development, and is frequently used by my other projects, particularly the "zugzug" and "console"
+packages.  If you have ideas or want to contribute, please open an issue or pull request.
