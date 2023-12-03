@@ -52,12 +52,10 @@ func runMain(options ...Option) error {
 // New will assemble a configuration of tasks that can be run based on context.
 func New(options ...Option) (Interface, error) {
 	cfg := &config{
-		tasks:       make(map[string]any),
-		parsers:     make(map[string]Parser),
-		usage:       make(map[string]string),
+		tasks:       make([]boundTask, 0, 32),
 		defaultTask: `help`,
 	}
-	cfg.addTask(`help`, zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg)
+	cfg.bindTask(zug.Alias(`help`, zug.New(cfg.provideHelp)), cfg, ``)
 	for _, option := range options {
 		option.apply(cfg)
 		if cfg.err != nil {
@@ -83,22 +81,21 @@ type Tasks []struct {
 
 func (seq Tasks) apply(cfg *config) {
 	for _, it := range seq {
-		task := zug.New(it.Fn)
+		var task zug.NamedTask
 		name := it.Name
 		if name != `` {
-			task = zug.Alias(it.Name, task)
+			task = zug.Alias(it.Name, zug.New(it.Fn))
 		} else {
-			name = task.(zug.NamedTask).TaskName()
+			task = zug.New(it.Fn).(zug.NamedTask)
+			name = task.TaskName()
 			name = strings.TrimSuffix(name, `-fm`) // common for methods converted to functions
+			name = sanitize(name)
+			task = zug.Alias(name, task)
 		}
-		name = sanitize(name)
 		if name == `` {
 			panic(fmt.Errorf(`all zugzug tasks must have a name`))
 		}
-		cfg.addTask(name, task, it.Parser)
-		if it.Use != `` {
-			cfg.addUsage(name, it.Use)
-		}
+		cfg.bindTask(task, it.Parser, it.Use)
 	}
 }
 
@@ -108,11 +105,9 @@ type Parser interface {
 }
 
 type config struct {
-	tasks       map[string]any
-	parsers     map[string]Parser
+	tasks       []boundTask
 	err         error
 	topics      []string
-	usage       map[string]string
 	defaultTask string
 }
 
@@ -140,61 +135,44 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 		}
 	}
 
-	var runs []runConfig
+	type job struct {
+		ctx  context.Context
+		task zug.Task
+	}
+	var jobs []job
+
 	for len(args) > 0 {
-		var run runConfig
-		var err error
-		run, args, err = cfg.run(ctx, args...)
-		if err != nil {
-			return err
+		// TODO: support for using "--" to separate arguments from the command and its flags.
+		task := cfg.match(args...)
+		if task == nil {
+			return fmt.Errorf(`unknown command %q; try "help" for a list of commands`, strings.Join(args, ` `))
 		}
-		runs = append(runs, run)
+		args = args[len(task.name):]
+		taskCtx := ctx
+		if task.parser != nil {
+			var err error
+			taskCtx, err = task.parser.Parse(ctx, cfg.baseCommandName()+` `+strings.Join(task.name, ` `), args)
+			if err != nil {
+				return err
+			}
+			args = nil // we assume the parser has consumed all arguments
+		}
+		jobs = append(jobs, job{ctx: taskCtx, task: task.task})
 	}
 
-	for _, run := range runs {
-		err := zug.Run(run.ctx, run.task)
+	for _, job := range jobs {
+		err := zug.Run(job.ctx, job.task)
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
-}
-
-func (cfg *config) run(ctx context.Context, args ...string) (runConfig, []string, error) {
-	arg0, args := args[0], args[1:]
-	taskName := strings.ToLower(arg0)
-	task, ok := cfg.tasks[taskName]
-	if !ok {
-		return runConfig{}, nil, fmt.Errorf(`unknown task %q`, arg0)
-	}
-
-	fs := cfg.parsers[taskName]
-	if fs == nil {
-		return runConfig{ctx, task}, args, nil
-	}
-	ctx, err := fs.Parse(ctx, cfg.baseCommandName()+` `+arg0, args)
-	if err != nil {
-		return runConfig{}, args, err
-	}
-	if ctx != nil {
-		return runConfig{ctx, task}, nil, nil
-	}
-	return runConfig{}, []string{`help`, taskName}, nil
 }
 
 type runConfig struct {
 	ctx  context.Context
-	task any
-}
-
-func (cfg *config) addTask(name string, task zug.Task, parser Parser) {
-	cfg.topics = append(cfg.topics, name)
-	cfg.tasks[name] = task
-	cfg.parsers[name] = parser
-}
-
-func (cfg *config) addUsage(name, use string) {
-	cfg.usage[name] = use
+	task *boundTask
 }
 
 func (cfg *config) provideHelp(ctx context.Context) error {
@@ -210,7 +188,11 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 		if topic == `help` {
 			continue
 		}
-		usage := cfg.usage[topic]
+		task := cfg.matchStr(topic)
+		if task == nil {
+			continue
+		}
+		usage := task.use
 		if ix := strings.IndexByte(usage, '\n'); ix > 0 {
 			usage = usage[:ix]
 		}
@@ -221,8 +203,8 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 }
 
 func (cfg *config) explainTopic(ctx context.Context, topic string) error {
-	usage := cfg.usage[topic]
-	if usage == `` {
+	task := cfg.matchStr(topic)
+	if task == nil {
 		return fmt.Errorf(`no help available for "%q"`, topic)
 	}
 	argv0 := cfg.baseCommandName()
@@ -230,7 +212,7 @@ func (cfg *config) explainTopic(ctx context.Context, topic string) error {
 	if err != nil {
 		return err
 	}
-	console.PrintError(ctx, usage)
+	console.PrintError(ctx, task.use)
 	if err != nil {
 		return err
 	}
@@ -244,6 +226,61 @@ func (cfg *config) baseCommandName() string {
 		argv0 = argv0[ix+1:]
 	}
 	return argv0
+}
+
+func (cfg *config) bindTask(task zug.NamedTask, parser Parser, use string) {
+	nameStr := strings.TrimSpace(task.TaskName())
+	var nameSeq []string
+	if nameStr != `` {
+		nameSeq = rxSpace.Split(nameStr, -1)
+		nameStr = strings.Join(nameSeq, ` `)
+		cfg.topics = append(cfg.topics, nameStr)
+	}
+
+	cfg.tasks = append(cfg.tasks, boundTask{
+		name:   nameSeq,
+		task:   task,
+		parser: parser,
+		use:    use,
+	})
+}
+
+var rxSpace = regexp.MustCompile(`\s+`)
+
+// matchStr returns the named task that matches the provided arguments, or nil if none match.
+func (cfg *config) matchStr(name string) *boundTask {
+	return cfg.match(strings.Split(name, ` `)...)
+}
+
+// match returns the named task that matches the provided arguments, or nil if none match.
+func (cfg *config) match(args ...string) *boundTask {
+	for i := range cfg.tasks {
+		task := &cfg.tasks[i]
+		if task.matches(args...) {
+			return task
+		}
+	}
+	return nil
+}
+
+type boundTask struct {
+	name   []string
+	task   zug.NamedTask
+	use    string
+	parser Parser
+}
+
+// matches returns true if the args[:len(task.name)] matches task.name.
+func (t *boundTask) matches(args ...string) bool {
+	if len(args) < len(t.name) {
+		return false
+	}
+	for i, name := range t.name {
+		if name != args[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Interface describes the interface produced by New for running a task using a list of arguments.

@@ -24,7 +24,10 @@ func main() {
 		{Fn: CheckSpelling, Use: `checks spelling`},
 		{Fn: CheckLinks, Use: `checks links`},
 		{Fn: GenerateHTML, Use: `generates HTML`},
+		// The next three are a little silly, but show off how to alias tasks.
 		{Fn: ListGoSources, Use: `finds Go source files`},
+		{Name: `list go-sources`, Fn: ListGoSources, Use: `finds Go source files`},
+		{Name: `list go sources`, Fn: ListGoSources, Use: `finds Go source files`},
 		{Fn: Sleep, Use: `sleeps for a certain amount of time`, Parser: parser.New(
 			parser.Duration(&sleepTime, `duration`, `t`, `how long to sleep`),
 		)},

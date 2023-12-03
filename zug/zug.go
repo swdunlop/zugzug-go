@@ -77,7 +77,7 @@ func Start(ctx context.Context, tasks ...any) error {
 
 // Alias will rename a task, which is useful if you have multiple tasks created by New but want to give them different
 // names.
-func Alias(name string, task Task) Task { return aliasTask{name: name, task: task} }
+func Alias(name string, task Task) NamedTask { return aliasTask{name: name, task: task} }
 
 type aliasTask struct {
 	name string
