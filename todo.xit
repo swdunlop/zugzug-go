@@ -9,3 +9,6 @@ Parsing
 [x] Improve documentation for cases where there is a parser.
 [x] Add support for settings in zugzug tasks.
 [x] Improve documentation for cases where there are settings.
+[ ] Add a generic zugzug.Settings command for showing the current settings from the environment.
+[ ] Assemble zugzug tasks into trie for faster lookup when using zugzug to define a shell.
+[ ] Add an example of using zugzug to make a command shell.

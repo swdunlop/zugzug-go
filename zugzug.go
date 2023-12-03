@@ -232,6 +232,29 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 		usage = strings.TrimSuffix(usage, "\r")
 		fmt.Fprintf(tw, "  %s %s \t%s\n", argv0, topic, usage)
 	}
+
+	hasSettings := false
+	for _, task := range cfg.tasks {
+		if len(task.settings) > 0 {
+			hasSettings = true
+			break
+		}
+	}
+	if !hasSettings {
+		return nil
+	}
+
+	fmt.Fprintln(tw, "\nSETTINGS:")
+	explained := make(map[string]struct{}, len(cfg.tasks))
+	for _, task := range cfg.tasks {
+		for _, it := range task.settings {
+			if _, ok := explained[it.Name]; ok {
+				continue
+			}
+			explained[it.Name] = struct{}{}
+			fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
+		}
+	}
 	return nil
 }
 
@@ -253,17 +276,20 @@ func (cfg *config) explainTopic(ctx context.Context, topic string) error {
 		tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
 		fmt.Fprintln(tw, `SETTINGS:`)
 		for _, it := range task.settings {
-			value := get(it.Var)
-			if value == `` {
-				fmt.Fprintf(tw, "  %s \t%s\n", it.Name, it.Use)
-			} else {
-				fmt.Fprintf(tw, "  %s \t%s (default: %q)\n", it.Name, it.Use, value)
-			}
+			fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
 		}
 		_ = tw.Flush()
 	}
 
 	return nil
+}
+
+func settingExplanation(name, use, value string) string {
+	if value == `` {
+		return fmt.Sprintf("  %s \t%s", name, use)
+	} else {
+		return fmt.Sprintf("  %s \t%s (default: %q)", name, use, value)
+	}
 }
 
 func (cfg *config) baseCommandName() string {
