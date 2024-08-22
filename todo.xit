@@ -1,14 +1,25 @@
-Parsing
+Parsing and Formatting
 [x] Do not assume `--help` after args[0] should be rewritten as `help`, let parsers handle help.
 [x] Add zugzug.Exit error type to tell Main to exit without printing an error message.
 [x] Implement `parser.Custom` to let tasks handle their own parsing.
 [x] Implement `parser.New` using pflag.
 [x] Add time.Time and time.Duration flag support.
-[x] Ensure the name provided to parse includes the full command, not just the subcommand.  
+[x] Ensure the name provided to parse includes the full command, not just the subcommand.
 [x] Provide support for a "Default" zugzug task, defaulting to "help" if not provided.
 [x] Improve documentation for cases where there is a parser.
 [x] Add support for settings in zugzug tasks.
 [x] Improve documentation for cases where there are settings.
+[x] Add an indent and tee package for formatting and tracing console I/O.
+[x] Ensure recent sources have Copyright statement.
+[x] Add FormatCommand to console to format commands in POSIX-like format, quoting arguments as needed.
+[ ] Let longest commands "win" instead of first command so `build macos" does not hijack "build macos x86" even if it is first.
 [ ] Add a generic zugzug.Settings command for showing the current settings from the environment.
 [ ] Assemble zugzug tasks into trie for faster lookup when using zugzug to define a shell.
 [ ] Add an example of using zugzug to make a command shell.
+
+Debugging
+[x] Add Silent / Quiet / Verbose options to console to control chattiness of stderr.
+[x] Report commands when Verbose, or Normal, but only when there is an error if Quiet.
+[x] Indent stderr (but not stdout) when running commands.
+[x] Add zugzug.Console and zugzug.With to make it easier to configure contexts before running tasks.
+[x] Add zugzug.Verbosity to inject flags for (q)uiet / (s)ilent / (v)erbose

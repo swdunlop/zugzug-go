@@ -20,6 +20,7 @@ import (
 
 	"github.com/swdunlop/zugzug-go/zug"
 	"github.com/swdunlop/zugzug-go/zug/console"
+	"github.com/swdunlop/zugzug-go/zug/parser"
 )
 
 // Main will assemble a configuration of tasks that can be performed with the provided options, and then run them based
@@ -34,10 +35,8 @@ func Main(options ...Option) {
 	if errors.As(err, &exit) {
 		os.Exit(int(exit))
 	}
-	if err != nil {
-		println(`!!`, err.Error())
-		os.Exit(1)
-	}
+	println(`!!`, err.Error())
+	os.Exit(1)
 }
 
 func runMain(options ...Option) error {
@@ -111,15 +110,11 @@ type Helper interface {
 	Help(name string) string
 }
 
-// Parser describes an interface that parses the remaining arguments for a task.  This prevents the default behavior of
-// interpreting the remaining arguments for additional tasks.  See zug/parser for a robust implementation of this
-// interface.
-type Parser interface {
-	// Parse will parse arguments for flags or return nil, nil if help is requested.
-	Parse(ctx context.Context, name string, arguments []string) (context.Context, error)
-}
+type Parser = parser.Interface
 
 type config struct {
+	with        []contextHook
+	parserHooks []parserHook
 	tasks       []boundTask
 	err         error
 	topics      []string
@@ -172,8 +167,14 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 		}
 		args = args[len(task.name):]
 		taskCtx := ctx
+		if task.parser == nil && len(cfg.parserHooks) > 0 {
+			task.parser = parser.New() // shim in a parser.
+		}
 		if task.parser != nil {
 			var err error
+			for _, hook := range cfg.parserHooks {
+				hook(task.parser)
+			}
 			taskCtx, err = task.parser.Parse(ctx, cfg.baseCommandName()+` `+strings.Join(task.name, ` `), args)
 			if err != nil {
 				return err
@@ -182,6 +183,9 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 				return cfg.explainTopic(ctx, strings.Join(task.name, ` `))
 			}
 			args = nil // we assume the parser has consumed all arguments
+		}
+		for _, with := range task.with {
+			taskCtx = with(taskCtx)
 		}
 		if len(args) > 0 {
 			switch args[0] {
@@ -311,6 +315,7 @@ func (cfg *config) bindTask(task zug.NamedTask, parser Parser, settings Settings
 	}
 
 	cfg.tasks = append(cfg.tasks, boundTask{
+		with:     append([]contextHook{}, cfg.with...),
 		name:     nameSeq,
 		task:     task,
 		parser:   parser,
@@ -338,6 +343,7 @@ func (cfg *config) match(args ...string) *boundTask {
 }
 
 type boundTask struct {
+	with     []contextHook
 	name     []string
 	task     zug.NamedTask
 	use      string
@@ -364,6 +370,47 @@ type Interface interface {
 	// provided with any remaining arguments.  Otherwise, Run will use the next argument to select another task, and
 	// so on.
 	Run(ctx context.Context, args ...string) error
+}
+
+// Console specifies console options.
+func Console(options ...console.Option) Option {
+	return fnOption(func(cfg *config) {
+		cfg.with = append(cfg.with, func(ctx context.Context) context.Context {
+			return console.With(ctx, options...)
+		})
+	})
+}
+
+// Verbosity specifies control of console verbosity for tasks whose parsers support parser.BoolFlagger.  This adds flags for
+// "-v / --verbose", "-q / --quiet", and "-s / --silent".
+func Verbosity() Option {
+	return fnOption(func(cfg *config) {
+		var (
+			quiet   = false
+			verbose = false
+			silent  = false
+		)
+		cfg.parserHooks = append(cfg.parserHooks, func(fs parser.Interface) {
+			bf, ok := fs.(parser.BoolFlagger)
+			if !ok {
+				return
+			}
+			bf.BoolFlag(&verbose, `verbose`, `v`, `logs commands their stderr to stderr`)
+			bf.BoolFlag(&quiet, `quiet`, `q`, `only logs commands and their stderr to stderr if they fail`)
+			bf.BoolFlag(&silent, `silent`, `s`, `suppresses command logging entirely`)
+		})
+		cfg.with = append(cfg.with, func(ctx context.Context) context.Context {
+			switch {
+			case verbose:
+				ctx = console.With(ctx, console.Verbose())
+			case quiet:
+				ctx = console.With(ctx, console.Quiet())
+			case silent:
+				ctx = console.With(ctx, console.Silent())
+			}
+			return ctx
+		})
+	})
 }
 
 type fnOption func(*config)
@@ -397,3 +444,7 @@ var (
 type Exit int
 
 func (ex Exit) Error() string { return fmt.Sprint(`exit code `, int(ex)) }
+
+type parserHook func(parser.Interface)
+
+type contextHook func(context.Context) context.Context

@@ -17,10 +17,6 @@ import (
 	"github.com/swdunlop/zugzug-go/zug/worker"
 )
 
-// Debug, once called, will disable recovery from panics and will instead allow them to propagate.  This is not ideal
-// if you are running tasks in parallel, but it is useful for debugging.
-func Debug() { debug = true }
-
 // WithLocalState will provide a new context with local state table for tracking whether a task has been run.  This
 // is useful for enabling running tasks multiple times.
 func WithLocalState(ctx context.Context) context.Context {
@@ -212,7 +208,7 @@ func runTask(ctx context.Context, task Task) (e Error) {
 		e.Stack = make([]uintptr, 64)
 		n := runtime.Callers(2, e.Stack)
 		e.Stack = e.Stack[:n]
-		if debug {
+		if Debug {
 			panic(r)
 		}
 	}()
@@ -220,7 +216,9 @@ func runTask(ctx context.Context, task Task) (e Error) {
 	return
 }
 
-var debug = false
+// Debug will disable recovery from panics and will instead allow them to propagate.  This is not ideal if you are running tasks
+// in parallel, but it is useful for debugging.
+var Debug = false
 
 // An Error is an error that knows which task it came from.
 type Error struct {
