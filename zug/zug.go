@@ -165,21 +165,6 @@ func pcTaskName(pc uintptr) string {
 // Errors is a slice of Errors that can be used as an error.
 type Errors []Error
 
-// condense removes all nil errors from the slice and returns nil if there are no errors.
-func (errs Errors) condense() error {
-	n := 0
-	for _, err := range errs {
-		if err.Err != nil {
-			errs[n] = err
-			n++
-		}
-	}
-	if n == 0 {
-		return nil
-	}
-	return errs[:n]
-}
-
 // Error implements the error interface by returning an empty string if there are no errors, the first
 // error if there was only one, or a string indicating the number of errors if there were more.
 func (errs Errors) Error() string {

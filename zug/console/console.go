@@ -50,7 +50,7 @@ func Errorf(ctx context.Context, format string, args ...interface{}) error {
 func Do(name string, args ...string) zug.NamedTask {
 	return zug.Alias(name, zug.New(func(ctx context.Context) error {
 		return Run(ctx, name, args...)
-	})).(zug.NamedTask)
+	}))
 }
 
 // Eval will run the provided command with the provided arguments, returning the output and error if any.
@@ -83,7 +83,7 @@ func (cfg *config) withCommand(ctx context.Context, name string, args []string, 
 	case normalVerbosity, quietVerbosity:
 		var stderr bytes.Buffer
 		if cfg.verbosityValue == normalVerbosity {
-			cfg.stderr.Write(buf)
+			_, _ = cfg.stderr.Write(buf)
 		} else {
 			stderr.Write(buf) // only show the command if it fails.
 		}
@@ -92,15 +92,15 @@ func (cfg *config) withCommand(ctx context.Context, name string, args []string, 
 		cmd.Stderr = indent.Writer(&stderr, `   `)
 		defer func() {
 			if err != nil {
-				fmt.Fprintln(&stderr, `!!`, err)
-				stderr.WriteTo(oldStderr)
+				_, _ = fmt.Fprintln(&stderr, `!!`, err)
+				_, _ = stderr.WriteTo(oldStderr)
 			}
 		}()
 	case verboseVerbosity:
-		cfg.stderr.Write(buf)
+		_, _ = cfg.stderr.Write(buf)
 		defer func() {
 			if err != nil {
-				fmt.Fprintln(cfg.stderr, `!!`, err)
+				_, _ = fmt.Fprintln(cfg.stderr, `!!`, err)
 			}
 		}()
 		cmd.Stderr = indent.Writer(cmd.Stderr, `   `)
@@ -475,5 +475,4 @@ func appendPOSIXLiteral(buf []byte, str string) []byte {
 	return buf
 }
 
-var rxCmd = regexp.MustCompile(`^[^ \r\n\t*?[\]{}|&;<>'` + "`" + `\\$#=!]+$`)
 var rxValue = regexp.MustCompile(`^[^ \r\n\t*?[\]{}|&;<>'` + "`" + `\\$#!]+$`) // Note that = is okay here.

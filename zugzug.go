@@ -112,6 +112,12 @@ type Helper interface {
 
 type Parser = parser.Interface
 
+// CommandName overrides the base command name used in help output.  An empty string suppresses the command name prefix
+// entirely, which is useful for REPL-style interfaces.
+func CommandName(name string) Option {
+	return fnOption(func(cfg *config) { cfg.commandName = &name })
+}
+
 type config struct {
 	with        []contextHook
 	parserHooks []parserHook
@@ -119,6 +125,7 @@ type config struct {
 	err         error
 	topics      []string
 	defaultTask string
+	commandName *string
 }
 
 func (cfg *config) Parse(ctx context.Context, _ string, args []string) (context.Context, error) {
@@ -175,7 +182,14 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 			for _, hook := range cfg.parserHooks {
 				hook(task.parser)
 			}
-			taskCtx, err = task.parser.Parse(ctx, cfg.baseCommandName()+` `+strings.Join(task.name, ` `), args)
+			parseName := cfg.baseCommandName()
+			taskName := strings.Join(task.name, ` `)
+			if parseName == `` {
+				parseName = taskName
+			} else {
+				parseName += ` ` + taskName
+			}
+			taskCtx, err = task.parser.Parse(ctx, parseName, args)
 			if err != nil {
 				return err
 			}
@@ -207,11 +221,6 @@ func (cfg *config) Run(ctx context.Context, args ...string) error {
 	return nil
 }
 
-type runConfig struct {
-	ctx  context.Context
-	task *boundTask
-}
-
 func (cfg *config) provideHelp(ctx context.Context) error {
 	if topic, ok := ctx.Value(ctxHelpTopic{}).(string); ok {
 		return cfg.explainTopic(ctx, topic)
@@ -219,8 +228,8 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 
 	argv0 := cfg.baseCommandName()
 	tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
-	defer tw.Flush()
-	fmt.Fprintln(tw, `COMMANDS:`)
+	defer func() { _ = tw.Flush() }()
+	_, _ = fmt.Fprintln(tw, `COMMANDS:`)
 	for _, topic := range cfg.topics {
 		if topic == `help` {
 			continue
@@ -234,7 +243,11 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 			usage = usage[:ix]
 		}
 		usage = strings.TrimSuffix(usage, "\r")
-		fmt.Fprintf(tw, "  %s %s \t%s\n", argv0, topic, usage)
+		if argv0 == `` {
+			_, _ = fmt.Fprintf(tw, "  %s \t%s\n", topic, usage)
+		} else {
+			_, _ = fmt.Fprintf(tw, "  %s %s \t%s\n", argv0, topic, usage)
+		}
 	}
 
 	hasSettings := false
@@ -248,7 +261,7 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 		return nil
 	}
 
-	fmt.Fprintln(tw, "\nSETTINGS:")
+	_, _ = fmt.Fprintln(tw, "\nSETTINGS:")
 	explained := make(map[string]struct{}, len(cfg.tasks))
 	for _, task := range cfg.tasks {
 		for _, it := range task.settings {
@@ -256,7 +269,7 @@ func (cfg *config) provideHelp(ctx context.Context) error {
 				continue
 			}
 			explained[it.Name] = struct{}{}
-			fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
+			_, _ = fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
 		}
 	}
 	return nil
@@ -268,19 +281,23 @@ func (cfg *config) explainTopic(ctx context.Context, topic string) error {
 		return fmt.Errorf(`no help available for "%q"`, topic)
 	}
 	argv0 := cfg.baseCommandName()
+	helpName := argv0 + ` ` + topic
+	if argv0 == `` {
+		helpName = topic
+	}
 	if helper, ok := task.parser.(Helper); ok {
-		_ = console.PrintError(ctx, helper.Help(argv0+` `+topic))
+		_ = console.PrintError(ctx, helper.Help(helpName))
 	} else if helper, ok := task.task.(Helper); ok {
-		_ = console.PrintError(ctx, helper.Help(argv0+` `+topic))
+		_ = console.PrintError(ctx, helper.Help(helpName))
 	} else {
-		_ = console.PrintError(ctx, `COMMAND:`, argv0, topic)
+		_ = console.PrintError(ctx, `COMMAND:`, helpName)
 	}
 
 	if len(task.settings) > 0 {
 		tw := tabwriter.NewWriter(console.From(ctx).Stderr(), 0, 0, 2, ' ', 0)
-		fmt.Fprintln(tw, `SETTINGS:`)
+		_, _ = fmt.Fprintln(tw, `SETTINGS:`)
 		for _, it := range task.settings {
-			fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
+			_, _ = fmt.Fprintln(tw, settingExplanation(it.Name, it.Use, get(it.Var)))
 		}
 		_ = tw.Flush()
 	}
@@ -297,7 +314,10 @@ func settingExplanation(name, use, value string) string {
 }
 
 func (cfg *config) baseCommandName() string {
-	argv0 := os.Args[0] // TODO: let the user override this
+	if cfg.commandName != nil {
+		return *cfg.commandName
+	}
+	argv0 := os.Args[0]
 	argv0 = strings.TrimSuffix(argv0, `.exe`)
 	if ix := strings.LastIndexByte(argv0, filepath.Separator); ix >= 0 {
 		argv0 = argv0[ix+1:]

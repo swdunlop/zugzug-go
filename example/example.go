@@ -46,9 +46,6 @@ func ServeSite(ctx context.Context) error {
 	return console.Print(ctx, `serving on port`, port)
 }
 
-// task groups all of the methods we want to expose as Zug tasks.
-type task struct{}
-
 func Check(ctx context.Context) error {
 	return zug.Run(ctx,
 		CheckSpelling,

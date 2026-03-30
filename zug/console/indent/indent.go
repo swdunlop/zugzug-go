@@ -27,12 +27,6 @@ func Writer(w io.Writer, indent string) io.Writer {
 	return &writer{&sink{io: w}, []byte(indent)}
 }
 
-func mergeIndents(prev []byte, indent string) []byte {
-	next := make([]byte, len(prev)+len(indent))
-	copy(next[copy(next, prev):], indent)
-	return next
-}
-
 type sink struct {
 	sync.Mutex
 	io       io.Writer
@@ -49,8 +43,8 @@ func (wr *writer) Write(p []byte) (int, error) {
 	if originalSz == 0 {
 		return 0, nil
 	}
-	wr.sink.Lock()
-	defer wr.sink.Unlock()
+	wr.Lock()
+	defer wr.Unlock()
 
 	isz := len(wr.indent)
 	sz := originalSz + isz
